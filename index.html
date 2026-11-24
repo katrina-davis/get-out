@@ -1,0 +1,645 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>The Vent - Part 1</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; }
+  body { background: #000; overflow: hidden; font-family: 'Courier New', Courier, monospace; color: #fff; }
+  canvas { display: block; width: 100vw; height: 100vh; }
+
+  /* TV Title Screen */
+  #tv-screen {
+    position: fixed; inset: 0; background: #080808; z-index: 100;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    background-image: radial-gradient(circle, #1a1a1a 0%, #000 85%);
+  }
+  .scanlines {
+    position: absolute; inset: 0; pointer-events: none;
+    background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.45) 50%);
+    background-size: 100% 4px;
+    animation: flicker 0.12s infinite;
+  }
+  @keyframes flicker {
+    0% { opacity: 0.85; }
+    50% { opacity: 1; }
+    100% { opacity: 0.9; }
+  }
+  #tv-title {
+    font-size: 4rem; letter-spacing: 8px; text-shadow: 2px 0 #f00, -2px 0 #0ff;
+    margin-bottom: 40px; animation: glitch 2s infinite;
+  }
+  @keyframes glitch {
+    0%, 92%, 100% { transform: translate(0); }
+    94% { transform: translate(-4px, 2px); }
+    96% { transform: translate(4px, -2px); }
+  }
+  #start-btn {
+    padding: 16px 48px; font-size: 1.5rem; font-family: inherit; font-weight: bold;
+    background: transparent; color: #fff; border: 3px solid #fff; cursor: pointer;
+    box-shadow: 0 0 15px rgba(255,255,255,0.3); transition: 0.2s; z-index: 101;
+  }
+  #start-btn:hover { background: #fff; color: #000; box-shadow: 0 0 25px #fff; }
+
+  /* Eyelid Blink Effect */
+  .eyelid {
+    position: fixed; left: 0; width: 100%; height: 0%; background: #000; z-index: 50;
+    transition: height 0.35s ease-in-out; pointer-events: none;
+  }
+  #top-lid { top: 0; }
+  #bottom-lid { bottom: 0; }
+
+  /* HUD & Prompts */
+  #hud {
+    position: fixed; inset: 0; pointer-events: none; z-index: 20;
+    display: flex; flex-direction: column; justify-content: space-between; padding: 30px;
+  }
+  #crosshair {
+    position: fixed; top: 50%; left: 50%; width: 6px; height: 6px;
+    background: rgba(255,255,255,0.6); border-radius: 50%; transform: translate(-50%, -50%);
+  }
+  #objective-text {
+    font-size: 1.3rem; text-shadow: 0 2px 4px #000; opacity: 0; transition: opacity 0.5s;
+  }
+  #center-prompt {
+    position: fixed; top: 58%; left: 50%; transform: translate(-50%, -50%);
+    text-align: center; font-size: 1.5rem; text-shadow: 0 2px 8px #000;
+  }
+  .scary-red {
+    color: #ff1a1a; font-size: 2.5rem; font-weight: bold; letter-spacing: 3px;
+    text-shadow: 0 0 12px #900; display: block; margin-bottom: 8px;
+    animation: pulse 0.5s infinite alternate;
+  }
+  @keyframes pulse { from { transform: scale(1); } to { transform: scale(1.06); } }
+
+  /* Note Overlay */
+  #note-overlay {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.8); z-index: 40;
+    display: none; align-items: center; justify-content: center;
+  }
+  #note-paper {
+    background: #e8dec8; color: #1a1815; width: 90%; max-width: 550px; padding: 40px;
+    font-family: 'Georgia', serif; font-size: 1.2rem; line-height: 1.6;
+    box-shadow: 0 0 40px #000; border: 1px solid #b8ad96;
+  }
+  #note-hint { margin-top: 25px; font-family: 'Courier New', monospace; font-size: 0.95rem; color: #555; text-align: center; }
+
+  /* Ending Screen */
+  #end-screen {
+    position: fixed; inset: 0; background: #000; z-index: 200;
+    display: none; flex-direction: column; align-items: center; justify-content: center;
+    text-align: center; padding: 20px;
+  }
+  #end-msg { font-size: 2rem; margin-bottom: 20px; }
+  #end-sub { font-size: 1.4rem; color: #aaa; margin-bottom: 40px; }
+  #replay-btn {
+    padding: 12px 30px; font-family: inherit; font-size: 1.1rem;
+    background: transparent; color: #fff; border: 2px solid #fff; cursor: pointer;
+  }
+  #replay-btn:hover { background: #fff; color: #000; }
+</style>
+</head>
+<body>
+
+<div id="tv-screen">
+  <div class="scanlines"></div>
+  <h1 id="tv-title">SIGNAL LOST</h1>
+  <button id="start-btn">START</button>
+</div>
+
+<div id="top-lid" class="eyelid"></div>
+<div id="bottom-lid" class="eyelid"></div>
+
+<div id="hud">
+  <div id="objective-text"></div>
+  <div id="crosshair"></div>
+  <div id="center-prompt"></div>
+</div>
+
+<div id="note-overlay">
+  <div id="note-paper">
+    <p>"I don’t know how long I've been here. Maybe It's been weeks, maybe years. I don’t even know how I'm alive. I keep hearing noises at what I assume is night time. The last thing I remember is a fire, and now I'm here. I’ve started to forget things. 10 minutes ago I couldn't remember my name. It's getting scary. Something's scratching on the ceiling. I –"</p>
+    <div id="note-hint">[ Press Q to put down ]</div>
+  </div>
+</div>
+
+<div id="end-screen">
+  <div id="end-sub"></div>
+  <div id="end-msg">THE END</div>
+  <button id="replay-btn" onclick="location.reload()">PLAY AGAIN</button>
+</div>
+
+<script src="https://cloudflare.com"></script>
+<script>
+// --- SOUND SYNTHESIZER (Web Audio API) ---
+const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+function playCreak() {
+  const osc = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+  osc.type = 'sawtooth';
+  osc.frequency.setValueAtTime(110, audioCtx.currentTime);
+  osc.frequency.exponentialRampToValueAtTime(45, audioCtx.currentTime + 0.8);
+  gain.gain.setValueAtTime(0.25, audioCtx.currentTime);
+  gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.8);
+  osc.connect(gain); gain.connect(audioCtx.destination);
+  osc.start(); osc.stop(audioCtx.currentTime + 0.8);
+}
+function playMetalClink() {
+  const osc = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+  osc.type = 'triangle';
+  osc.frequency.setValueAtTime(1400, audioCtx.currentTime);
+  osc.frequency.exponentialRampToValueAtTime(600, audioCtx.currentTime + 0.25);
+  gain.gain.setValueAtTime(0.3, audioCtx.currentTime);
+  gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.25);
+  osc.connect(gain); gain.connect(audioCtx.destination);
+  osc.start(); osc.stop(audioCtx.currentTime + 0.25);
+}
+function playScream() {
+  for (let i = 0; i < 3; i++) {
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.type = i === 0 ? 'sawtooth' : 'square';
+    osc.frequency.setValueAtTime(750 + i * 180, audioCtx.currentTime);
+    osc.frequency.linearRampToValueAtTime(320 + i * 90, audioCtx.currentTime + 1.8);
+    gain.gain.setValueAtTime(0.35, audioCtx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 1.8);
+    osc.connect(gain); gain.connect(audioCtx.destination);
+    osc.start(); osc.stop(audioCtx.currentTime + 1.8);
+  }
+}
+
+// --- THREE.JS SETUP ---
+const scene = new THREE.Scene();
+scene.fog = new THREE.FogExp2(0x050505, 0.08);
+const camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, 100);
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(window.innerWidth, window.innerHeight);
+document.body.appendChild(renderer.domElement);
+
+// --- GAME STATE ---
+let state = 'MENU'; // MENU, DARK_ROOM, VENT_OPEN, CRAWLING, FALLING, WHITE_ROOM, READING, KEY_DROPPED, ENDING
+let yaw = 0, pitch = 0;
+let playerHeight = 1.6;
+let crawlTimer = 0;
+let noteRead = false;
+let keySpawned = false;
+let keyLanded = false;
+let keyDropPos = new THREE.Vector3();
+let promptCooldown = 0;
+const keys = {};
+
+// --- DOM ELEMENTS ---
+const tvScreen = document.getElementById('tv-screen');
+const objText = document.getElementById('objective-text');
+const centerPrompt = document.getElementById('center-prompt');
+const noteOverlay = document.getElementById('note-overlay');
+const endScreen = document.getElementById('end-screen');
+const endSub = document.getElementById('end-sub');
+
+// --- LIGHTING ---
+const ambientLight = new THREE.AmbientLight(0x222222);
+scene.add(ambientLight);
+const playerLight = new THREE.PointLight(0xffffff, 0.8, 12);
+scene.add(playerLight);
+
+// --- PROCEDURAL PHOTO TEXTURE (Little girl & dad with crossed-out eyes) ---
+function createPhotoTexture() {
+  const c = document.createElement('canvas');
+  c.width = 256; c.height = 256;
+  const ctx = c.getContext('2d');
+  ctx.fillStyle = '#d9cbb8'; ctx.fillRect(0, 0, 256, 256);
+  ctx.strokeStyle = '#3a2e25'; ctx.lineWidth = 12; ctx.strokeRect(6, 6, 244, 244);
+  // Dad
+  ctx.fillStyle = '#554433'; ctx.beginPath(); ctx.arc(90, 95, 32, 0, Math.PI*2); ctx.fill();
+  ctx.fillRect(58, 130, 64, 90);
+  // Girl
+  ctx.beginPath(); ctx.arc(175, 135, 24, 0, Math.PI*2); ctx.fill();
+  ctx.fillRect(152, 162, 46, 65);
+  // Crossed out eyes in red
+  ctx.strokeStyle = '#a00'; ctx.lineWidth = 4;
+  [[78,90],[102,90],[166,132],[184,132]].forEach(([x,y]) => {
+    ctx.beginPath(); ctx.moveTo(x-6, y-6); ctx.lineTo(x+6, y+6);
+    ctx.moveTo(x+6, y-6); ctx.lineTo(x-6, y+6); ctx.stroke();
+  });
+  return new THREE.CanvasTexture(c);
+}
+
+// --- BUILD ENVIRONMENTS ---
+// 1. Dark Room (x: -4 to 4, z: -4 to 4)
+const darkMat = new THREE.MeshStandardMaterial({ color: 0x18181c, roughness: 0.9 });
+const darkRoom = new THREE.Group();
+const darkFloor = new THREE.Mesh(new THREE.PlaneGeometry(8, 8), darkMat);
+darkFloor.rotation.x = -Math.PI / 2;
+darkRoom.add(darkFloor);
+
+const darkCeil = new THREE.Mesh(new THREE.PlaneGeometry(8, 8), darkMat);
+darkCeil.rotation.x = Math.PI / 2; darkCeil.position.y = 3.2;
+darkRoom.add(darkCeil);
+
+function addWall(group, w, h, x, y, z, ry, mat) {
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), mat);
+  m.position.set(x, y, z); m.rotation.y = ry;
+  group.add(m);
+}
+addWall(darkRoom, 8, 3.2, 0, 1.6, 4, Math.PI, darkMat);
+addWall(darkRoom, 8, 3.2, -4, 1.6, 0, Math.PI/2, darkMat);
+addWall(darkRoom, 8, 3.2, 4, 1.6, 0, -Math.PI/2, darkMat);
+addWall(darkRoom, 8, 3.2, 0, 1.6, -4, 0, darkMat);
+
+// Vent on North Wall (z = -3.95)
+const ventGroup = new THREE.Group();
+Use code with caution.
+ventGroup.position.set(0, 0.55, -3.95);
+const ventHole = new THREE.Mesh(new THREE.PlaneGeometry(1.1, 0.9), new THREE.MeshBasicMaterial({ color: 0x000000 }));
+ventGroup.add(ventHole);
+const ventGrate = new THREE.Group();
+const frameMat = new THREE.MeshStandardMaterial({ color: 0x555b61, metalness: 0.7, roughness: 0.4 });
+const grateBorder = new THREE.Mesh(new THREE.BoxGeometry(1.15, 0.95, 0.06), frameMat);
+ventGrate.add(grateBorder);
+for (let i = -0.35; i <= 0.35; i += 0.14) {
+const slat = new THREE.Mesh(new THREE.BoxGeometry(1.0, 0.04, 0.08), new THREE.MeshStandardMaterial({ color: 0x222222 }));
+slat.position.y = i;
+ventGrate.add(slat);
+}
+ventGroup.add(ventGrate);
+darkRoom.add(ventGroup);
+scene.add(darkRoom);
+// 2. Vent Tunnel (z: -4 to -26, y: 0 to 1.0)
+const ventMat = new THREE.MeshStandardMaterial({ color: 0x3a3f45, metalness: 0.6, roughness: 0.5, side: THREE.DoubleSide });
+const ventTunnel = new THREE.Group();
+const vFloor = new THREE.Mesh(new THREE.PlaneGeometry(1.2, 22), ventMat);
+vFloor.rotation.x = -Math.PI/2; vFloor.position.set(0, 0.05, -15);
+const vCeil = new THREE.Mesh(new THREE.PlaneGeometry(1.2, 22), ventMat);
+vCeil.rotation.x = Math.PI/2; vCeil.position.set(0, 1.05, -15);
+const vLeft = new THREE.Mesh(new THREE.PlaneGeometry(22, 1.0), ventMat);
+vLeft.rotation.y = Math.PI/2; vLeft.position.set(-0.6, 0.55, -15);
+const vRight = new THREE.Mesh(new THREE.PlaneGeometry(22, 1.0), ventMat);
+vRight.rotation.y = -Math.PI/2; vRight.position.set(0.6, 0.55, -15);
+ventTunnel.add(vFloor, vCeil, vLeft, vRight);
+scene.add(ventTunnel);
+// 3. White Room (y: -10, x: -6 to 6, z: -22 to -10)
+const whiteMat = new THREE.MeshStandardMaterial({ color: 0xf4f4f6, roughness: 0.6 });
+const whiteRoom = new THREE.Group();
+whiteRoom.position.set(0, -10, -16);
+const wFloor = new THREE.Mesh(new THREE.PlaneGeometry(12, 12), whiteMat);
+wFloor.rotation.x = -Math.PI/2;
+whiteRoom.add(wFloor);
+const wCeil = new THREE.Mesh(new THREE.PlaneGeometry(12, 12), whiteMat);
+wCeil.rotation.x = Math.PI/2; wCeil.position.y = 4.5;
+whiteRoom.add(wCeil);
+addWall(whiteRoom, 12, 4.5, 0, 2.25, -6, 0, whiteMat);
+addWall(whiteRoom, 12, 4.5, 0, 2.25, 6, Math.PI, whiteMat);
+addWall(whiteRoom, 12, 4.5, -6, 2.25, 0, Math.PI/2, whiteMat);
+addWall(whiteRoom, 12, 4.5, 6, 2.25, 0, -Math.PI/2, whiteMat);
+// Desk in White Room (at local z = -3.8)
+const deskGroup = new THREE.Group();
+deskGroup.position.set(0, 0, -3.8);
+const woodMat = new THREE.MeshStandardMaterial({ color: 0x4a321f, roughness: 0.7 });
+const deskTop = new THREE.Mesh(new THREE.BoxGeometry(2.4, 0.1, 1.1), woodMat);
+deskTop.position.y = 0.85;
+deskGroup.add(deskTop);
+[[-1.05, -0.45], [1.05, -0.45], [-1.05, 0.45], [1.05, 0.45]].forEach(([lx, lz]) => {
+const leg = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.85, 0.1), woodMat);
+leg.position.set(lx, 0.425, lz);
+deskGroup.add(leg);
+});
+// Picture Frame on Desk
+const photoMesh = new THREE.Mesh(
+new THREE.BoxGeometry(0.35, 0.42, 0.04),
+new THREE.MeshStandardMaterial({ map: createPhotoTexture() })
+);
+photoMesh.position.set(-0.45, 1.1, -0.1);
+photoMesh.rotation.y = 0.25;
+photoMesh.rotation.x = -0.15;
+deskGroup.add(photoMesh);
+// Note on Desk
+const noteMesh = new THREE.Mesh(
+new THREE.BoxGeometry(0.32, 0.01, 0.42),
+new THREE.MeshStandardMaterial({ color: 0xfff8e7 })
+);
+noteMesh.position.set(0.25, 0.91, 0.1);
+noteMesh.rotation.y = -0.15;
+deskGroup.add(noteMesh);
+whiteRoom.add(deskGroup);
+scene.add(whiteRoom);
+// Falling Key Object
+const keyGroup = new THREE.Group();
+const goldMat = new THREE.MeshStandardMaterial({ color: 0xffd700, metalness: 0.8, roughness: 0.2 });
+const keyRing = new THREE.Mesh(new THREE.TorusGeometry(0.06, 0.015, 8, 16), goldMat);
+keyRing.rotation.x = Math.PI/2;
+const keyShaft = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 0.18), goldMat);
+keyShaft.rotation.z = Math.PI/2; keyShaft.position.x = 0.12;
+const keyTooth = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.01, 0.04), goldMat);
+keyTooth.position.set(0.18, 0, 0.025);
+keyGroup.add(keyRing, keyShaft, keyTooth);
+keyGroup.visible = false;
+scene.add(keyGroup);
+// Tall Black Figure (for Bad Ending)
+const figureGroup = new THREE.Group();
+const blackMat = new THREE.MeshBasicMaterial({ color: 0x020202 });
+const figBody = new THREE.Mesh(new THREE.CylinderGeometry(0.25, 0.35, 2.2, 8), blackMat);
+figBody.rotation.x = Math.PI/2;
+const figHead = new THREE.Mesh(new THREE.SphereGeometry(0.24, 12, 12), blackMat);
+figHead.position.z = 1.25;
+const eyeMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+const eyeL = new THREE.Mesh(new THREE.SphereGeometry(0.03), eyeMat);
+eyeL.position.set(-0.08, 0.08, 1.45);
+const eyeR = new THREE.Mesh(new THREE.SphereGeometry(0.03), eyeMat);
+eyeR.position.set(0.08, 0.08, 1.45);
+figureGroup.add(figBody, figHead, eyeL, eyeR);
+figureGroup.visible = false;
+scene.add(figureGroup);
+// Forest Floor (for Safe Ending)
+const forestGroup = new THREE.Group();
+forestGroup.position.set(0, -25, -19.8);
+const grass = new THREE.Mesh(new THREE.PlaneGeometry(30, 30), new THREE.MeshStandardMaterial({ color: 0x142914 }));
+grass.rotation.x = -Math.PI/2;
+forestGroup.add(grass);
+for (let i = 0; i < 25; i++) {
+const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.3, 6), new THREE.MeshStandardMaterial({ color: 0x2b1d12 }));
+trunk.position.set((Math.random()-0.5)*18, 3, (Math.random()-0.5)*18);
+if (trunk.position.length() > 2.5) forestGroup.add(trunk);
+}
+forestGroup.visible = false;
+scene.add(forestGroup);
+// --- START SEQUENCE ---
+camera.position.set(0, 1.6, 2.2);
+document.getElementById('start-btn').addEventListener('click', () => {
+if (audioCtx.state === 'suspended') audioCtx.resume();
+tvScreen.style.display = 'none';
+document.body.requestPointerLock();
+state = 'DARK_ROOM';
+// Sequence: "Where am I." -> Blink -> "objective: look around."
+showObjective("Where am I.");
+setTimeout(() => {
+blinkEyes(() => {
+showObjective("Objective: look around.");
+});
+}, 2200);
+});
+function showObjective(text) {
+objText.textContent = text;
+objText.style.opacity = 1;
+}
+function blinkEyes(midCallback) {
+const top = document.getElementById('top-lid');
+const bot = document.getElementById('bottom-lid');
+top.style.height = '52%'; bot.style.height = '52%';
+setTimeout(() => {
+if (midCallback) midCallback();
+top.style.height = '0%'; bot.style.height = '0%';
+}, 450);
+}
+// --- CONTROLS ---
+document.addEventListener('click', () => {
+if (state !== 'MENU' && state !== 'READING' && state !== 'ENDING') {
+document.body.requestPointerLock();
+}
+});
+document.addEventListener('mousemove', (e) => {
+if (document.pointerLockElement === document.body && state !== 'READING' && state !== 'ENDING') {
+yaw -= e.movementX * 0.0022;
+pitch -= e.movementY * 0.0022;
+pitch = Math.max(-Math.PI/2.1, Math.min(Math.PI/2.1, pitch));
+}
+});
+document.addEventListener('keydown', (e) => {
+const k = e.key.toLowerCase();
+keys[k] = true;
+// Pull Vent (Y)
+if (k === 'y' && state === 'DARK_ROOM') {
+const distToVent = camera.position.distanceTo(new THREE.Vector3(0, 1.0, -3.9));
+if (distToVent < 2.3) {
+playMetalClink();
+ventGrate.position.set(0.8, -0.3, 0.4);
+ventGrate.rotation.set(1.2, 0.3, 0.5);
+state = 'VENT_OPEN';
+centerPrompt.innerHTML = "Press C to crawl";
+}
+}
+// Crawl into Vent (C)
+if (k === 'c' && state === 'VENT_OPEN') {
+state = 'CRAWLING';
+playerHeight = 0.52;
+camera.position.set(0, playerHeight, -4.3);
+yaw = 0; pitch = 0;
+centerPrompt.innerHTML = "";
+showObjective("Crawl through the vent...");
+}
+// Read / Unzoom Note (Q)
+if (k === 'q') {
+if (state === 'WHITE_ROOM' && !noteRead) {
+const distToNote = camera.position.distanceTo(new THREE.Vector3(0.25, -8.5, -19.7));
+if (distToNote < 2.2) {
+state = 'READING';
+noteOverlay.style.display = 'flex';
+centerPrompt.innerHTML = "";
+document.exitPointerLock();
+}
+} else if (state === 'READING') {
+noteOverlay.style.display = 'none';
+noteRead = true;
+state = 'WHITE_ROOM';
+document.body.requestPointerLock();
+showObjective("Look up...");
+} else if (state === 'KEY_DROPPED' && keyLanded) {
+const distToKey = new THREE.Vector2(camera.position.x - keyGroup.position.x, camera.position.z - keyGroup.position.z).length();
+if (distToKey < 2.2) {
+triggerBadEnding();
+}
+}
+}
+});
+document.addEventListener('keyup', (e) => {
+keys[e.key.toLowerCase()] = false;
+});
+// --- ENDINGS ---
+function triggerBadEnding() {
+state = 'ENDING';
+centerPrompt.innerHTML = "";
+objText.style.opacity = 0;
+document.exitPointerLock();
+// Key flies to hand
+keyGroup.position.set(camera.position.x, camera.position.y - 0.3, camera.position.z - 0.4);
+// Spawn tall black figure across room
+figureGroup.visible = true;
+figureGroup.position.set(camera.position.x, -9.75, camera.position.z - 5.5);
+figureGroup.lookAt(camera.position.x, -9.75, camera.position.z);
+let shakeTime = 0;
+const badInterval = setInterval(() => {
+shakeTime += 0.05;
+// Camera shakes & falls to floor
+camera.position.x += (Math.random() - 0.5) * 0.15;
+camera.position.y = Math.max(-9.6, camera.position.y - 0.08);
+pitch = Math.min(0.25, pitch + 0.04);
+// Figure crawls rapidly toward player
+figureGroup.position.z += 0.24;
+if (shakeTime >= 1.3 && shakeTime < 1.36) {
+playScream();
+}
+if (shakeTime >= 2.6) {
+clearInterval(badInterval);
+endSub.textContent = "";
+endScreen.style.display = 'flex';
+}
+}, 50);
+}
+function triggerSafeEnding() {
+state = 'ENDING';
+centerPrompt.innerHTML = "";
+objText.style.opacity = 0;
+document.exitPointerLock();
+// Open floor under desk and drop into forest
+wFloor.visible = false;
+forestGroup.visible = true;
+scene.fog = new THREE.FogExp2(0x0a180a, 0.06);
+ambientLight.color.setHex(0x3a5a3a);
+let fallTime = 0;
+const safeInterval = setInterval(() => {
+fallTime += 0.05;
+camera.position.y -= 0.45;
+if (fallTime >= 1.6) {
+clearInterval(safeInterval);
+endSub.style.color = '#fff';
+endSub.textContent = "To be continued in part two.";
+endScreen.style.display = 'flex';
+}
+}, 50);
+}
+// --- MAIN GAME LOOP ---
+const clock = new THREE.Clock();
+function animate() {
+requestAnimationFrame(animate);
+const dt = Math.min(clock.getDelta(), 0.1);
+// Camera Rotation
+if (state !== 'ENDING') {
+camera.rotation.order = 'YXZ';
+camera.rotation.y = yaw;
+camera.rotation.x = pitch;
+}
+// Movement Vector
+const forward = new THREE.Vector3(-Math.sin(yaw), 0, -Math.cos(yaw));
+const right = new THREE.Vector3(Math.cos(yaw), 0, -Math.sin(yaw));
+const moveDir = new THREE.Vector3();
+if (keys['w'] || keys['arrowup']) moveDir.add(forward);
+if (keys['s'] || keys['arrowdown']) moveDir.sub(forward);
+if (keys['d'] || keys['arrowright']) moveDir.add(right);
+if (keys['a'] || keys['arrowleft']) moveDir.sub(right);
+if (moveDir.length() > 0) moveDir.normalize();
+// STATE: DARK ROOM
+if (state === 'DARK_ROOM' || state === 'VENT_OPEN') {
+camera.position.addScaledVector(moveDir, 3.2 * dt);
+camera.position.x = Math.max(-3.5, Math.min(3.5, camera.position.x));
+camera.position.z = Math.max(-3.4, Math.min(3.5, camera.position.z));
+const distToVent = camera.position.distanceTo(new THREE.Vector3(0, 1.0, -3.9));
+if (state === 'DARK_ROOM') {
+centerPrompt.innerHTML = distToVent < 2.3 ? "Press Y to pull." : "";
+}
+}
+// STATE: CRAWLING IN VENT
+if (state === 'CRAWLING') {
+if (moveDir.length() > 0) {
+crawlTimer += dt;
+camera.position.addScaledVector(moveDir, 1.4 * dt);
+camera.position.x = Math.max(-0.25, Math.min(0.25, camera.position.x));
+camera.position.z = Math.max(-24, Math.min(-4.2, camera.position.z));
+// Subtle crawl head-bob
+camera.position.y = 0.52 + Math.sin(crawlTimer * 10) * 0.03;
+}
+// After 15 seconds of crawling -> Creak, look down, vent gives way!
+if (crawlTimer >= 15) {
+state = 'FALLING';
+playCreak();
+showObjective("");
+pitch = -Math.PI / 2.2; // Look down at floor of vent
+setTimeout(() => {
+// Transition to bright white room
+scene.fog = new THREE.FogExp2(0xffffff, 0.015);
+ambientLight.color.setHex(0xdddddd);
+playerLight.intensity = 1.2;
+camera.position.set(0, -6.2, -16);
+}, 900);
+}
+}
+// STATE: FALLING INTO WHITE ROOM
+if (state === 'FALLING') {
+if (camera.position.y < -5.5) {
+camera.position.y -= 9.5 * dt;
+if (camera.position.y <= -8.4) {
+camera.position.y = -8.4;
+pitch = 0;
+state = 'WHITE_ROOM';
+showObjective("Explore the room.");
+}
+}
+}
+// STATE: WHITE ROOM
+if (state === 'WHITE_ROOM') {
+camera.position.addScaledVector(moveDir, 3.6 * dt);
+camera.position.x = Math.max(-5.4, Math.min(5.4, camera.position.x));
+camera.position.z = Math.max(-21.4, Math.min(-10.6, camera.position.z));
+// Check if looking at note before reading
+if (!noteRead) {
+const distToNote = camera.position.distanceTo(new THREE.Vector3(0.25, -8.5, -19.7));
+centerPrompt.innerHTML = distToNote < 2.2 ? "Press Q to read." : "";
+} else if (!keySpawned) {
+// Trigger key drop when player looks up
+if (pitch > 0.55) {
+keySpawned = true;
+state = 'KEY_DROPPED';
+keyDropPos.set(camera.position.x, -5.6, camera.position.z - 0.8);
+keyGroup.position.copy(keyDropPos);
+keyGroup.visible = true;
+showObjective("");
+}
+}
+}
+// STATE: KEY DROPPED (Choose Ending)
+if (state === 'KEY_DROPPED') {
+camera.position.addScaledVector(moveDir, 3.8 * dt);
+camera.position.x = Math.max(-5.4, Math.min(5.4, camera.position.x));
+camera.position.z = Math.max(-21.4, Math.min(-10.6, camera.position.z));
+// Animate key falling to the floor
+if (!keyLanded) {
+keyGroup.position.y -= 6.5 * dt;
+keyGroup.rotation.z += 8 * dt;
+if (keyGroup.position.y <= -9.97) {
+keyGroup.position.y = -9.97;
+keyGroup.rotation.set(0, 0.5, 0);
+keyLanded = true;
+playMetalClink();
+}
+} else {
+const distFromKey = new THREE.Vector2(camera.position.x - keyGroup.position.x, camera.position.z - keyGroup.position.z).length();
+// Looking down near the key -> Show red scary prompt
+if (distFromKey < 2.2 && pitch < -0.35) {
+centerPrompt.innerHTML = <span class="scary-red">PICK IT UP.</span>Press Q to pick up.;
+} else {
+centerPrompt.innerHTML = "";
+}
+// Safe Ending Trigger: Move 5+ feet (~1.6 units) away from the key
+if (distFromKey >= 1.8) {
+promptCooldown -= dt;
+if (promptCooldown <= 0) {
+objText.style.color = '#ff2222';
+objText.style.fontSize = '2rem';
+showObjective("RUN TO THE DESK");
+}
+// Check if player reaches the desk (z around -19.8, x around 0)
+const distToDesk = new THREE.Vector2(camera.position.x, camera.position.z - (-19.5)).length();
+if (distToDesk < 1.5) {
+triggerSafeEnding();
+}
+}
+}
+}
+playerLight.position.copy(camera.position);
+renderer.render(scene, camera);
+}
+window.addEventListener('resize', () => {
+camera.aspect = window.innerWidth / window.innerHeight;
+camera.updateProjectionMatrix();
+renderer.setSize(window.innerWidth, window.innerHeight);
+});
+animate();
